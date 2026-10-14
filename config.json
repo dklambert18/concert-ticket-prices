@@ -1,0 +1,14 @@
+{
+  "sources": ["seatgeek", "ticketmaster"],
+  "cities": [
+    {"city": "New York", "state": "NY"},
+    {"city": "Los Angeles", "state": "CA"},
+    {"city": "Chicago", "state": "IL"}
+  ],
+  "keywords": [],
+  "days_ahead": 180,
+  "max_pages": 20,
+  "request_delay_seconds": 1,
+  "country_code": "US",
+  "database": "ticket_prices.db"
+}
