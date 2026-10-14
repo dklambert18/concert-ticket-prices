@@ -423,7 +423,7 @@ def main():
             failures += 1
 
     conn.close()
-    return 1 if failures == len(wanted) else 0
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
