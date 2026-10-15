@@ -34,6 +34,8 @@ Output is appended to `collector.log`.
 ## Database tables
 
 - **events**: one row per show, with name, performers, venue, city and date.
+- **artists**: one row per artist per source, with the source's artist ID and name. Collected from 2026-10-15 onward.
+- **event_artists**: links shows to the artists on the bill (one row per show per artist).
 - **price_snapshots**: one row per show per day, with low, average, median and high price, listing count, popularity scores, `days_until_event` and sale status.
 
 How each source fills the snapshot fields:

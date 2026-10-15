@@ -64,6 +64,23 @@ CREATE TABLE IF NOT EXISTS price_snapshots (
     raw_json        TEXT,
     PRIMARY KEY (source, event_id, snapshot_date)
 );
+
+CREATE TABLE IF NOT EXISTS artists (
+    source          TEXT NOT NULL,
+    artist_id       TEXT NOT NULL,   -- SeatGeek performer id / Ticketmaster attraction id
+    name            TEXT,
+    first_seen      TEXT,
+    last_seen       TEXT,
+    PRIMARY KEY (source, artist_id)
+);
+
+-- Which artists are on which event's bill (many-to-many).
+CREATE TABLE IF NOT EXISTS event_artists (
+    source          TEXT NOT NULL,
+    event_id        TEXT NOT NULL,
+    artist_id       TEXT NOT NULL,
+    PRIMARY KEY (source, event_id, artist_id)
+);
 """
 
 
@@ -118,7 +135,7 @@ def get_json(url, params, retries=3):
 
 
 def log(msg):
-    print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
 def days_until(event_dt_str, now):
@@ -203,7 +220,8 @@ def parse_seatgeek(ev, now):
         "currency": "USD",
         "raw_json": json.dumps({"stats": stats, "score": ev.get("score")}),
     }
-    return event_row, snap
+    artists = [(str(p["id"]), p.get("name")) for p in performers if p.get("id") is not None]
+    return event_row, snap, artists
 
 
 # --------------------------------------------------------------------------
@@ -296,7 +314,8 @@ def parse_ticketmaster(ev, now):
         "currency": ranges[0].get("currency") if ranges else None,
         "raw_json": json.dumps({"priceRanges": ranges, "status": status}),
     }
-    return event_row, snap
+    artists = [(a["id"], a.get("name")) for a in attractions if a.get("id")]
+    return event_row, snap, artists
 
 
 # --------------------------------------------------------------------------
@@ -314,7 +333,7 @@ def build_queries(cfg):
     return queries
 
 
-def save(conn, event_row, snap, now):
+def save(conn, event_row, snap, artists, now):
     now_iso = now.isoformat(timespec="seconds")
     conn.execute(
         """
@@ -349,6 +368,21 @@ def save(conn, event_row, snap, now):
         """,
         {**snap, "snapshot_date": now.date().isoformat(), "captured_at": now_iso},
     )
+    for artist_id, name in artists:
+        conn.execute(
+            """
+            INSERT INTO artists (source, artist_id, name, first_seen, last_seen)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (source, artist_id) DO UPDATE SET
+                name = excluded.name,
+                last_seen = excluded.last_seen
+            """,
+            (event_row["source"], artist_id, name, now_iso, now_iso),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO event_artists (source, event_id, artist_id) VALUES (?, ?, ?)",
+            (event_row["source"], event_row["event_id"], artist_id),
+        )
 
 
 def collect(conn, source, fetcher, parser, cfg, key):
@@ -356,11 +390,11 @@ def collect(conn, source, fetcher, parser, cfg, key):
     seen = set()
     count = 0
     for ev in fetcher(cfg, key):
-        event_row, snap = parser(ev, now)
+        event_row, snap, artists = parser(ev, now)
         if event_row["event_id"] in seen:  # same event can match several queries
             continue
         seen.add(event_row["event_id"])
-        save(conn, event_row, snap, now)
+        save(conn, event_row, snap, artists, now)
         count += 1
     conn.commit()
     log(f"{source}: saved {count} event snapshots")
